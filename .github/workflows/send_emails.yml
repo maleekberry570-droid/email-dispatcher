@@ -1,29 +1,48 @@
 name: Background Email Dispatcher
 
 on:
-  schedule:
-    - cron: '*/5 * * * *'
   workflow_dispatch:
+  schedule:
+    - cron: '*/15 * * * *'
 
 jobs:
   send-emails:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
       - name: Install Dependencies
         run: |
-          pip install supabase spintax
+          pip install supabase
 
       - name: Run Dispatcher Script
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-          INBOXES_JSON: ${{ secrets.INBOXES_JSON }}
+          INBOX_1_EMAIL: ${{ secrets.INBOX_1_EMAIL }}
+          INBOX_1_PASS: ${{ secrets.INBOX_1_PASS }}
+          INBOX_2_EMAIL: ${{ secrets.INBOX_2_EMAIL }}
+          INBOX_2_PASS: ${{ secrets.INBOX_2_PASS }}
+          INBOX_3_EMAIL: ${{ secrets.INBOX_3_EMAIL }}
+          INBOX_3_PASS: ${{ secrets.INBOX_3_PASS }}
+          INBOX_4_EMAIL: ${{ secrets.INBOX_4_EMAIL }}
+          INBOX_4_PASS: ${{ secrets.INBOX_4_PASS }}
+          INBOX_5_EMAIL: ${{ secrets.INBOX_5_EMAIL }}
+          INBOX_5_PASS: ${{ secrets.INBOX_5_PASS }}
+          INBOX_6_EMAIL: ${{ secrets.INBOX_6_EMAIL }}
+          INBOX_6_PASS: ${{ secrets.INBOX_6_PASS }}
+          INBOX_7_EMAIL: ${{ secrets.INBOX_7_EMAIL }}
+          INBOX_7_PASS: ${{ secrets.INBOX_7_PASS }}
+          INBOX_8_EMAIL: ${{ secrets.INBOX_8_EMAIL }}
+          INBOX_8_PASS: ${{ secrets.INBOX_8_PASS }}
+          INBOX_9_EMAIL: ${{ secrets.INBOX_9_EMAIL }}
+          INBOX_9_PASS: ${{ secrets.INBOX_9_PASS }}
+          INBOX_10_EMAIL: ${{ secrets.INBOX_10_EMAIL }}
+          INBOX_10_PASS: ${{ secrets.INBOX_10_PASS }}
         run: python worker.py
