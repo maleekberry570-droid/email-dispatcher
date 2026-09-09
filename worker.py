@@ -1,58 +1,66 @@
 import os
-import json
-import random
 import smtplib
-import time
-from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from supabase import create_client
-import spintax
 
-# 1. Connect to Supabase
-supabase = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
+# Initialize Supabase
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 
-# 2. Load Multiple Inboxes from JSON secret
-inboxes = json.loads(os.environ["INBOXES_JSON"])
-DAILY_LIMIT = 30
+if not SUPABASE_URL or not SUPABASE_KEY:
+    raise ValueError("Missing SUPABASE_URL or SUPABASE_KEY environment variables.")
 
-def parse_spintax_and_vars(text, row):
-    text = text.replace("[first_name]", str(row.get("first_name", "")))
-    text = text.replace("[sender_name]", str(row.get("sender_name", "")))
-    return spintax.spin(text)
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# Fetch pending leads
-response = supabase.table("campaign_queue").select("*").eq("status", "pending").limit(5).execute()
-pending_rows = response.data
+# Collect all configured inboxes from environment variables
+INBOXES = []
+for i in range(1, 11):
+    user = os.environ.get(f"INBOX_{i}_EMAIL")
+    pwd = os.environ.get(f"INBOX_{i}_PASS")
+    if user and pwd:
+        INBOXES.append({"username": user.strip(), "password": pwd.strip()})
 
-if pending_rows:
-    for row in pending_rows:
-        # Pick a random inbox from your configured list
-        selected_inbox = random.choice(inboxes)
-        inbox_user = selected_inbox["username"]
-        inbox_pass = selected_inbox["password"]
-        
-        recipient = row["recipient_email"]
-        sender_display_name = str(row.get("sender_name", "")).strip()
-        
-        msg = MIMEMultipart()
-        msg["From"] = f'"{sender_display_name}" <{inbox_user}>' if sender_display_name else inbox_user
-        msg["To"] = recipient
-        msg["Subject"] = parse_spintax_and_vars(row["subject_template"], row)
-        msg.attach(MIMEText(parse_spintax_and_vars(row["body_template"], row), "plain"))
-        
+if not INBOXES:
+    raise ValueError("No valid inboxes configured in environment variables!")
+
+def send_email(to_email, subject, body, inbox):
+    msg = MIMEMultipart()
+    msg['From'] = inbox['username']
+    msg['To'] = to_email
+    msg['Subject'] = subject
+    msg.attach(MIMEText(body, 'html'))
+
+    # Inframail SMTP Server Settings
+    server = smtplib.SMTP('smtp.inframail.io', 587)
+    server.starttls()
+    server.login(inbox['username'], inbox['password'])
+    server.sendmail(inbox['username'], to_email, msg.as_string())
+    server.quit()
+
+def process_queue():
+    # Fetch pending leads from Supabase queue
+    response = supabase.table("email_queue").select("*").eq("status", "pending").limit(50).execute()
+    leads = response.data
+
+    if not leads:
+        print("No pending emails to send.")
+        return
+
+    print(f"Found {len(leads)} pending emails.")
+    
+    inbox_index = 0
+    for lead in leads:
+        inbox = INBOXES[inbox_index % len(INBOXES)]
         try:
-            server = smtplib.SMTP("smtp.inframail.io", 587, timeout=30)
-            server.ehlo()
-            server.starttls()
-            server.ehlo()
-            server.login(inbox_user, inbox_pass)
-            server.sendmail(inbox_user, recipient, msg.as_string())
-            server.quit()
-            
-            supabase.table("campaign_queue").update({"status": "sent"}).eq("id", row["id"]).execute()
-            print(f"Sent to {recipient} using {inbox_user}")
-            
-            time.sleep(120)  # 2-minute gap
+            send_email(lead['email'], lead['subject'], lead['body'], inbox)
+            supabase.table("email_queue").update({"status": "sent"}).eq("id", lead['id']).execute()
+            print(f"Successfully sent email to {lead['email']} via {inbox['username']}")
         except Exception as e:
-            print(f"Failed sending to {recipient}: {e}")
-            supabase.table("campaign_queue").update({"status": f"failed: {e}"}).eq("id", row["id"]).execute()
+            print(f"Failed to send to {lead['email']}: {e}")
+            supabase.table("email_queue").update({"status": "failed", "error": str(e)}).eq("id", lead['id']).execute()
+            
+        inbox_index += 1
+
+if __name__ == "__main__":
+    process_queue()
