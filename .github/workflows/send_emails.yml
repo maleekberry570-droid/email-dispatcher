@@ -25,6 +25,5 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-          INBOX_USER: ${{ secrets.INBOX_USER }}
-          INBOX_PASS: ${{ secrets.INBOX_PASS }}
+          INBOXES_JSON: ${{ secrets.INBOXES_JSON }}
         run: python worker.py
