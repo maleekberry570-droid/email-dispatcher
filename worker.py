@@ -1,29 +1,36 @@
 import os
-import time
+import json
+import random
 import smtplib
+import time
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from supabase import create_client
 import spintax
 
-# 1. Connect to Supabase Database
+# 1. Connect to Supabase
 supabase = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
 
-# 2. Get Inframail SMTP Credentials
-inbox_user = os.environ["INBOX_USER"]
-inbox_pass = os.environ["INBOX_PASS"]
+# 2. Load Multiple Inboxes from JSON secret
+inboxes = json.loads(os.environ["INBOXES_JSON"])
+DAILY_LIMIT = 30
 
 def parse_spintax_and_vars(text, row):
     text = text.replace("[first_name]", str(row.get("first_name", "")))
     text = text.replace("[sender_name]", str(row.get("sender_name", "")))
     return spintax.spin(text)
 
-# Fetch up to 5 pending leads from the queue
+# Fetch pending leads
 response = supabase.table("campaign_queue").select("*").eq("status", "pending").limit(5).execute()
 pending_rows = response.data
 
 if pending_rows:
     for row in pending_rows:
+        # Pick a random inbox from your configured list
+        selected_inbox = random.choice(inboxes)
+        inbox_user = selected_inbox["username"]
+        inbox_pass = selected_inbox["password"]
+        
         recipient = row["recipient_email"]
         sender_display_name = str(row.get("sender_name", "")).strip()
         
@@ -34,7 +41,6 @@ if pending_rows:
         msg.attach(MIMEText(parse_spintax_and_vars(row["body_template"], row), "plain"))
         
         try:
-            # Connect directly to Inframail SMTP on port 587
             server = smtplib.SMTP("smtp.inframail.io", 587, timeout=30)
             server.ehlo()
             server.starttls()
@@ -43,11 +49,10 @@ if pending_rows:
             server.sendmail(inbox_user, recipient, msg.as_string())
             server.quit()
             
-            # Update status in database
             supabase.table("campaign_queue").update({"status": "sent"}).eq("id", row["id"]).execute()
-            print(f"Successfully sent to {recipient}")
+            print(f"Sent to {recipient} using {inbox_user}")
             
-            time.sleep(120)  # Enforce 2-minute gap between dispatches
+            time.sleep(120)  # 2-minute gap
         except Exception as e:
             print(f"Failed sending to {recipient}: {e}")
             supabase.table("campaign_queue").update({"status": f"failed: {e}"}).eq("id", row["id"]).execute()
